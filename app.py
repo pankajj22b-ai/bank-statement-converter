@@ -66,9 +66,10 @@ def clean_number(val_str):
 def parse_pdf(pdf_file):
     all_rows = []
     
+    # Strategy 1: Table Extraction (For Grid-based PDFs like SBI, Kotak, HDFC)
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
-            tables = page.extract_tables()
+            tables = page.extract_tables() or []
             for table in tables:
                 if not table: continue
                 
@@ -99,7 +100,6 @@ def parse_pdf(pdf_file):
                             header_found = True
                             continue
                             
-                        # If header not found, infer from the first valid data row
                         for i, cell in enumerate(cleaned_row):
                             if re.search(r'\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4}', cell):
                                 date_idx = i
@@ -119,7 +119,6 @@ def parse_pdf(pdf_file):
                                     det_idx = i
                             col_map['details'] = det_idx if det_idx != -1 else date_idx + 1
                             inferred_col_map = True
-                            # Continue down to process this row since it's valid data
                         else:
                             continue
                             
@@ -155,6 +154,51 @@ def parse_pdf(pdf_file):
                             'Remarks': remarks
                         })
 
+    # Strategy 2: Text Line Extraction Fallback (For borderless/multi-line PDFs like BoB Bank of Baroda)
+    if not all_rows:
+        with pdfplumber.open(pdf_file) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text() or ''
+                lines = text.split('\n')
+                for line in lines:
+                    m_date = re.match(r'^\s*(\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4})', line)
+                    if m_date:
+                        date_str = m_date.group(1)
+                        try:
+                            parsed_date = date_parser.parse(date_str, dayfirst=True)
+                        except (ValueError, TypeError, OverflowError):
+                            continue
+                            
+                        rest = line[len(m_date.group(0)):].strip()
+                        m_val = re.match(r'^(\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4})', rest)
+                        if m_val:
+                            rest = rest[len(m_val.group(0)):].strip()
+                            
+                        amounts = re.findall(r'[\d,]+\.\d{2}(?:[CcDd][Rr])?', rest)
+                        if len(amounts) >= 2:
+                            bal_val = clean_number(amounts[-1])
+                            amt_val = clean_number(amounts[-2])
+                            
+                            amt_pos = rest.rfind(amounts[-2])
+                            details = rest[:amt_pos].strip()
+                            
+                            u_line = line.upper()
+                            is_credit = False
+                            if 'DEPOSIT' in u_line or 'CR' in amounts[-2].upper() or 'CRED' in u_line:
+                                is_credit = True
+                                
+                            debit = 0.0 if is_credit else amt_val
+                            credit = amt_val if is_credit else 0.0
+                            
+                            all_rows.append({
+                                'Date': parsed_date.strftime('%Y-%m-%d'),
+                                'DETAILS': details,
+                                'DEBIT': debit,
+                                'CREDIT': credit,
+                                'Balance': bal_val,
+                                'Remarks': extract_remarks(details)
+                            })
+
     return pd.DataFrame(all_rows)
 
 st.set_page_config(page_title='Bank Statement to Excel', layout='centered')
@@ -169,7 +213,7 @@ if uploaded_file is not None:
             df = parse_pdf(uploaded_file)
             
             if df.empty:
-                st.error('No transactions found. Please ensure it is a valid bank statement with a tabular layout.')
+                st.error('No transactions found. Please ensure it is a valid bank statement PDF.')
             else:
                 st.success(f'Successfully extracted {len(df)} transactions!')
                 
