@@ -6,32 +6,47 @@ import re
 from dateutil import parser as date_parser
 
 def extract_remarks(details):
-    details_upper = details.upper()
-    if 'ATM WDL' in details_upper or 'ATM CASH' in details_upper: return 'Atm cash withdrawal'
-    if 'LIC OF' in details_upper: return 'LIC'
-    if 'GST' in details_upper: return 'GST Paid'
-    if 'GROWW' in details_upper: return 'Groww'
-    if 'DREAMPLUG' in details_upper: return 'Dreamplug'
-    if 'CBDT' in details_upper or 'INCOME TAX' in details_upper: return 'CBDT'
-    if 'INTEREST CREDIT' in details_upper: return 'INTEREST'
-    if 'CHEQUE' in details_upper:
-        if 'CLEARING' in details_upper: return 'Cheque Deposited'
-        if 'WITHDRAWAL' in details_upper: return 'Cash Withdrawals'
+    s = str(details).strip()
+    u = s.upper()
+    
+    # 1. Standard Banking Categories
+    if any(k in u for k in ['ATM WDL', 'ATM CASH', 'ATMCARD']): return 'Atm cash withdrawal'
+    if any(k in u for k in ['INT.PD', 'INTEREST CREDIT', 'INT CREDIT']): return 'INTEREST'
+    if any(k in u for k in ['SMS CHARGE', 'CHARGES', 'FEE']): return 'Bank Charges'
+    if 'LIC OF' in u or 'LIC' in u: return 'LIC'
+    if any(k in u for k in ['GST', 'CBDT', 'INCOME TAX', 'TAX']): return 'GST / Tax Paid'
+    if 'CHEQUE' in u or 'CLG' in u:
+        if 'CLEARING' in u: return 'Cheque Deposited'
+        if 'WITHDRAWAL' in u: return 'Cash Withdrawals'
         return 'Cheque Paid'
-    
-    # Custom names heuristic
-    names = ['AMBIKA', 'TULSI', 'JYOTSANA', 'SILVER FAB', 'KIRAN', 'MAJISHA', 'SWASTIK', 'FIN INDIA', 'INDIAN CLE']
-    for name in names:
-        if name in details_upper:
-            if name == 'INDIAN CLE': return 'Fin India'
-            return name.title()
 
-    if 'NEFT' in details_upper: return 'NEFT'
-    if 'IMPS' in details_upper: return 'IMPS'
-    if 'RTGS' in details_upper: return 'RTGS'
-    if 'UPI' in details_upper: return 'UPI'
-    if 'WDL TFR' in details_upper or 'WITHDRAWAL' in details_upper: return 'Withdrawals'
-    
+    # 2. NEFT / IMPS / RTGS Pattern Extraction (Enclosed in asterisks *NAME*)
+    if '*' in s:
+        asterisk_parts = s.split('*')
+        for p in asterisk_parts:
+            p_strip = p.strip()
+            p_clean = re.sub(r'[^a-zA-Z\s]', '', p_strip).strip()
+            if (len(p_clean) >= 3 
+                and not re.search(r'^[A-Z]{4}0', p_strip)
+                and not p_strip.startswith('ICIN')
+                and not any(k in p_clean.upper() for k in ['NEFT', 'IMPS', 'RTGS', 'DEP', 'TFR', 'BARB', 'ICIC', 'HDFC', 'SBIN', 'BATCHID', 'SALABATPURA', 'UDHASURAT'])):
+                return p_clean.title()
+
+    # 3. UPI Pattern Extraction
+    if 'UPI' in u:
+        parts = [p.strip() for p in s.split('/') if p.strip()]
+        for p in parts:
+            p_clean = re.sub(r'[^a-zA-Z\s]', '', p).strip()
+            if len(p_clean) >= 3 and not any(k in p_clean.upper() for k in ['UPI', 'PAID VIA', 'GPAY', 'PAYTM', 'OKAXIS', 'OKICIC', 'OKHDFC', 'YBL']):
+                return p_clean.title()
+        return 'UPI'
+
+    # 4. Fallback for NEFT / IMPS / RTGS
+    if 'NEFT' in u: return 'NEFT'
+    if 'IMPS' in u: return 'IMPS'
+    if 'RTGS' in u: return 'RTGS'
+    if 'WDL TFR' in u or 'WITHDRAWAL' in u: return 'Withdrawals'
+
     return 'Other'
 
 def clean_number(val_str):
