@@ -267,8 +267,11 @@ if uploaded_file is not None:
     try:
         with pdfplumber.open(uploaded_file) as pdf:
             is_authenticated = True
-    except PDFPasswordIncorrect:
-        needs_password = True
+    except Exception as e:
+        if type(e).__name__ in ['PDFPasswordIncorrect', 'PdfminerException']:
+            needs_password = True
+        else:
+            st.error(f"Failed to open PDF: {e}")
         
     if needs_password:
         st.warning("🔒 This PDF is password protected.")
@@ -277,8 +280,11 @@ if uploaded_file is not None:
             try:
                 with pdfplumber.open(uploaded_file, password=pdf_password) as pdf:
                     is_authenticated = True
-            except PDFPasswordIncorrect:
-                st.error("Incorrect password. Please try again.")
+            except Exception as e:
+                if type(e).__name__ in ['PDFPasswordIncorrect', 'PdfminerException']:
+                    st.error("Incorrect password. Please try again.")
+                else:
+                    st.error(f"Failed to open PDF: {e}")
                 
     if is_authenticated:
         with st.spinner('Extracting data from PDF...'):
