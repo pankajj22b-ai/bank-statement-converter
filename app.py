@@ -35,12 +35,11 @@ def extract_remarks(details):
 
     # 3. UPI Pattern Extraction
     if 'UPI' in u:
-        parts = [p.strip() for p in s.split('/') if p.strip()]
-        for p in parts:
-            p_clean = re.sub(r'[^a-zA-Z\s]', '', p).strip()
-            if len(p_clean) >= 3 and not any(k in p_clean.upper() for k in ['UPI', 'PAID VIA', 'GPAY', 'PAYTM', 'OKAXIS', 'OKICIC', 'OKHDFC', 'YBL']):
-                return p_clean.title()
         return 'UPI'
+
+    # Specific Canara Remarks
+    if 'PMSBY RENEWAL' in u: return 'PMSBY RENEWAL'
+    if 'SBINT' in u: return 'SBINT'
 
     # 4. Fallback for NEFT / IMPS / RTGS
     if 'NEFT' in u: return 'NEFT'
@@ -140,7 +139,29 @@ def parse_pdf(pdf_file, password=''):
                             
                     if header_found or inferred_col_map:
                         date_str = cleaned_row[col_map['date']] if col_map['date'] != -1 and col_map['date'] < len(cleaned_row) else ''
-                        if not date_str: continue
+                        details = cleaned_row[col_map['details']] if col_map['details'] != -1 and col_map['details'] < len(cleaned_row) else ''
+                        
+                        if not date_str:
+                            if all_rows:
+                                if details:
+                                    all_rows[-1]['DETAILS'] += ' ' + details
+                                    all_rows[-1]['Remarks'] = extract_remarks(all_rows[-1]['DETAILS'])
+                                
+                                debit_str = cleaned_row[col_map['debit']] if col_map['debit'] != -1 and col_map['debit'] < len(cleaned_row) else ''
+                                credit_str = cleaned_row[col_map['credit']] if col_map['credit'] != -1 and col_map['credit'] < len(cleaned_row) else ''
+                                balance_str = cleaned_row[col_map['balance']] if col_map['balance'] != -1 and col_map['balance'] < len(cleaned_row) else ''
+                                
+                                debit = clean_number(debit_str)
+                                credit = clean_number(credit_str)
+                                balance = clean_number(balance_str)
+                                
+                                if debit > 0:
+                                    all_rows[-1]['DEBIT'] = debit
+                                if credit > 0:
+                                    all_rows[-1]['CREDIT'] = credit
+                                if balance > 0:
+                                    all_rows[-1]['Balance'] = balance
+                            continue
                         
                         if not re.search(r'\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4}', date_str):
                             continue
