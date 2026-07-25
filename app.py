@@ -228,6 +228,62 @@ def parse_pdf(pdf_file, password=''):
                                 'Remarks': extract_remarks(details)
                             })
 
+    # Strategy 3: OCR Fallback for Scanned Image PDFs (like HDFC)
+    if not all_rows:
+        try:
+            import pytesseract
+            from pdf2image import convert_from_bytes
+            
+            pdf_file.seek(0)
+            images = convert_from_bytes(pdf_file.read())
+            
+            for img in images:
+                text = pytesseract.image_to_string(img)
+                lines = text.split('\n')
+                for line in lines:
+                    m_date = re.match(r'^\s*(\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4})', line)
+                    if m_date:
+                        date_str = m_date.group(1)
+                        try:
+                            parsed_date = date_parser.parse(date_str, dayfirst=True)
+                        except (ValueError, TypeError, OverflowError):
+                            continue
+                            
+                        rest = line[len(m_date.group(0)):].strip()
+                        m_val = re.match(r'^(\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4})', rest)
+                        if m_val:
+                            rest = rest[len(m_val.group(0)):].strip()
+                            
+                        amounts = re.findall(r'[\d,]+\.\d{2}(?:[CcDd][Rr])?', rest)
+                        if len(amounts) >= 2:
+                            bal_val = clean_number(amounts[-1])
+                            amt_val = clean_number(amounts[-2])
+                            
+                            amt_pos = rest.rfind(amounts[-2])
+                            details = rest[:amt_pos].strip()
+                            
+                            u_line = line.upper()
+                            is_credit = False
+                            if 'DEPOSIT' in u_line or 'CR' in amounts[-2].upper() or 'CRED' in u_line:
+                                is_credit = True
+                                
+                            debit = 0.0 if is_credit else amt_val
+                            credit = amt_val if is_credit else 0.0
+                            
+                            all_rows.append({
+                                'Date': parsed_date.strftime('%Y-%m-%d'),
+                                'DETAILS': details,
+                                'DEBIT': debit,
+                                'CREDIT': credit,
+                                'Balance': bal_val,
+                                'Remarks': extract_remarks(details)
+                            })
+        except ImportError:
+            pass # pytesseract or pdf2image not installed
+        except Exception as e:
+            pass # Handle other errors silently to allow Streamlit to show empty df message
+
+
     # Balance-based Credit/Debit Post-Processing Correction
     if len(all_rows) > 0:
         is_reverse = False

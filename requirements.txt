@@ -3,3 +3,5 @@ pandas
 pdfplumber
 openpyxl
 python-dateutil
+pytesseract
+pdf2image
