@@ -254,8 +254,8 @@ def parse_pdf(pdf_file, password=''):
     return pd.DataFrame(all_rows)
 
 st.set_page_config(page_title='Bank Statement to Excel', layout='centered')
-st.title('🏦 Bank Statement to Excel Converter')
-st.write('Upload your Bank Statement (SBI, BoB, Kotak, etc.) to extract transactions and generate an Excel report.')
+st.title('Personal Assitant of Bhavnaaaaaaaaaaaaa Maam')
+st.write('Upload your Bank Statement (SBI, BoB, Kotak, etc.) bhavan maam, to extract transactions and generate an Excel report.')
 
 uploaded_file = st.file_uploader('Upload PDF Statement', type='pdf')
 
