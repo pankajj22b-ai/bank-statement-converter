@@ -75,121 +75,86 @@ def parse_pdf(pdf_file, password=''):
             for table in tables:
                 if not table: continue
                 
-                header_found = False
-                inferred_col_map = False
-                col_map = {'date': -1, 'details': -1, 'debit': -1, 'credit': -1, 'balance': -1}
-                
+                # Process dynamically without relying on headers
                 for row in table:
                     cleaned_row = [str(cell).replace('\n', ' ').strip() if cell else '' for cell in row]
                     
-                    if not header_found and not inferred_col_map:
-                        row_upper = [c.upper() for c in cleaned_row]
-                        date_idx = details_idx = debit_idx = credit_idx = bal_idx = -1
-                        
-                        for i, cell in enumerate(row_upper):
-                            if any(k in cell for k in ['DATE', 'TRAN DATE', 'VALUE DATE']) and date_idx == -1: date_idx = i
-                            elif any(k in cell for k in ['DETAILS', 'NARRATION', 'DESCRIPTION', 'PARTICULARS']) and details_idx == -1: details_idx = i
-                            elif any(k in cell for k in ['DEBIT', 'WITHDRAWAL', 'DR']) and debit_idx == -1: debit_idx = i
-                            elif any(k in cell for k in ['CREDIT', 'DEPOSIT', 'CR']) and credit_idx == -1: credit_idx = i
-                            elif 'BALANCE' in cell and bal_idx == -1: bal_idx = i
+                    # 1. Find Date
+                    date_idx = -1
+                    for i, cell in enumerate(cleaned_row):
+                        if re.search(r'\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4}', cell):
+                            date_idx = i
+                            break
                             
-                        if date_idx != -1 and details_idx != -1 and (credit_idx != -1 or debit_idx != -1):
-                            col_map['date'] = date_idx
-                            col_map['details'] = details_idx
-                            col_map['debit'] = debit_idx
-                            col_map['credit'] = credit_idx
-                            col_map['balance'] = bal_idx
-                            header_found = True
-                            continue
+                    # 2. Find Amounts
+                    amt_cols = []
+                    for i in range(len(cleaned_row)):
+                        if i == date_idx: continue
+                        cell_clean = cleaned_row[i].replace(' ', '').replace(',', '')
+                        if re.match(r'^-?\d+\.\d{2}(?:[CcDd][Rr])?$', cell_clean):
+                            amt_cols.append(i)
                             
-                        for i, cell in enumerate(cleaned_row):
-                            if re.search(r'\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4}', cell):
-                                date_idx = i
-                                break
-                                
-                        if date_idx != -1:
-                            amt_cols = []
-                            for i in range(date_idx + 1, len(cleaned_row)):
-                                cell_clean = cleaned_row[i].replace(' ', '').replace(',', '')
-                                if re.match(r'^-?\d+\.\d{2}(?:[CcDd][Rr])?$', cell_clean):
-                                    amt_cols.append(i)
-                                    
-                            if len(amt_cols) >= 2:
-                                col_map['date'] = date_idx
-                                col_map['balance'] = amt_cols[-1]
-                                if len(amt_cols) >= 3:
-                                    col_map['credit'] = amt_cols[-2]
-                                    col_map['debit'] = amt_cols[-3]
-                                else:
-                                    col_map['debit'] = amt_cols[-2]
-                                    col_map['credit'] = -1
-                                    
-                                max_len = -1
-                                det_idx = -1
-                                for i in range(date_idx + 1, amt_cols[-2]):
-                                    if len(cleaned_row[i]) > max_len:
-                                        max_len = len(cleaned_row[i])
-                                        det_idx = i
-                                col_map['details'] = det_idx if det_idx != -1 else date_idx + 1
-                                inferred_col_map = True
-                            else:
-                                continue
-                        else:
-                            continue
-                            
-                    if header_found or inferred_col_map:
-                        date_str = cleaned_row[col_map['date']] if col_map['date'] != -1 and col_map['date'] < len(cleaned_row) else ''
-                        details = cleaned_row[col_map['details']] if col_map['details'] != -1 and col_map['details'] < len(cleaned_row) else ''
-                        
-                        if not date_str:
-                            if all_rows:
-                                if details:
-                                    all_rows[-1]['DETAILS'] += ' ' + details
-                                    all_rows[-1]['Remarks'] = extract_remarks(all_rows[-1]['DETAILS'])
-                                
-                                debit_str = cleaned_row[col_map['debit']] if col_map['debit'] != -1 and col_map['debit'] < len(cleaned_row) else ''
-                                credit_str = cleaned_row[col_map['credit']] if col_map['credit'] != -1 and col_map['credit'] < len(cleaned_row) else ''
-                                balance_str = cleaned_row[col_map['balance']] if col_map['balance'] != -1 and col_map['balance'] < len(cleaned_row) else ''
-                                
-                                debit = clean_number(debit_str)
-                                credit = clean_number(credit_str)
-                                balance = clean_number(balance_str)
-                                
-                                if debit > 0:
-                                    all_rows[-1]['DEBIT'] = debit
-                                if credit > 0:
-                                    all_rows[-1]['CREDIT'] = credit
-                                if balance > 0:
-                                    all_rows[-1]['Balance'] = balance
-                            continue
-                        
-                        if not re.search(r'\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4}', date_str):
-                            continue
-                            
+                    if date_idx != -1:
+                        # NEW TRANSACTION ROW
+                        date_str = cleaned_row[date_idx]
                         try:
                             parsed_date = date_parser.parse(date_str, dayfirst=True)
                         except (ValueError, TypeError, OverflowError):
                             continue
                             
-                        details = cleaned_row[col_map['details']] if col_map['details'] != -1 and col_map['details'] < len(cleaned_row) else ''
-                        debit_str = cleaned_row[col_map['debit']] if col_map['debit'] != -1 and col_map['debit'] < len(cleaned_row) else ''
-                        credit_str = cleaned_row[col_map['credit']] if col_map['credit'] != -1 and col_map['credit'] < len(cleaned_row) else ''
-                        balance_str = cleaned_row[col_map['balance']] if col_map['balance'] != -1 and col_map['balance'] < len(cleaned_row) else ''
-                        
-                        debit = clean_number(debit_str)
-                        credit = clean_number(credit_str)
-                        balance = clean_number(balance_str)
-                        
-                        remarks = extract_remarks(details)
-                        
+                        # Find details
+                        details = ''
+                        if len(amt_cols) > 0:
+                            det_parts = [cleaned_row[i] for i in range(date_idx + 1, amt_cols[0]) if cleaned_row[i]]
+                            details = ' '.join(det_parts)
+                        else:
+                            det_parts = [cleaned_row[i] for i in range(date_idx + 1, len(cleaned_row)) if cleaned_row[i]]
+                            details = ' '.join(det_parts)
+                            
+                        # Extract amounts
+                        balance = 0.0
+                        amt = 0.0
+                        if len(amt_cols) >= 3:
+                            balance = clean_number(cleaned_row[amt_cols[-1]])
+                            amt = max(clean_number(cleaned_row[amt_cols[-2]]), clean_number(cleaned_row[amt_cols[-3]]))
+                        elif len(amt_cols) == 2:
+                            balance = clean_number(cleaned_row[amt_cols[-1]])
+                            amt = clean_number(cleaned_row[amt_cols[-2]])
+                        elif len(amt_cols) == 1:
+                            amt = clean_number(cleaned_row[amt_cols[0]])
+                            
                         all_rows.append({
                             'Date': parsed_date.strftime('%Y-%m-%d'),
                             'DETAILS': details,
-                            'DEBIT': debit,
-                            'CREDIT': credit,
+                            'DEBIT': amt, # Initially map to Debit, Post-Processor fixes it
+                            'CREDIT': 0.0,
                             'Balance': balance,
-                            'Remarks': remarks
+                            'Remarks': extract_remarks(details)
                         })
+                    else:
+                        # CONTINUATION ROW
+                        if not all_rows: continue
+                        
+                        det_parts = [cleaned_row[i] for i in range(len(cleaned_row)) if i not in amt_cols and cleaned_row[i]]
+                        details = ' '.join(det_parts)
+                        
+                        if details:
+                            all_rows[-1]['DETAILS'] += ' ' + details
+                            all_rows[-1]['Remarks'] = extract_remarks(all_rows[-1]['DETAILS'])
+                            
+                        if len(amt_cols) >= 3:
+                            balance = clean_number(cleaned_row[amt_cols[-1]])
+                            amt = max(clean_number(cleaned_row[amt_cols[-2]]), clean_number(cleaned_row[amt_cols[-3]]))
+                            if amt > 0: all_rows[-1]['DEBIT'] = amt
+                            if balance > 0: all_rows[-1]['Balance'] = balance
+                        elif len(amt_cols) == 2:
+                            balance = clean_number(cleaned_row[amt_cols[-1]])
+                            amt = clean_number(cleaned_row[amt_cols[-2]])
+                            if amt > 0: all_rows[-1]['DEBIT'] = amt
+                            if balance > 0: all_rows[-1]['Balance'] = balance
+                        elif len(amt_cols) == 1:
+                            amt = clean_number(cleaned_row[amt_cols[0]])
+                            if amt > 0: all_rows[-1]['DEBIT'] = amt
 
     # Strategy 2: Text Line Extraction Fallback (For borderless/multi-line PDFs like BoB Bank of Baroda)
     if not all_rows:
@@ -250,18 +215,38 @@ def parse_pdf(pdf_file, password=''):
         if is_reverse:
             all_rows.reverse()
             
-        for i in range(1, len(all_rows)):
-            prev_bal = all_rows[i-1]['Balance']
+        for i in range(len(all_rows)):
             curr_bal = all_rows[i]['Balance']
             amt = all_rows[i]['DEBIT'] + all_rows[i]['CREDIT']
             
-            diff = round(curr_bal - prev_bal, 2)
-            if diff > 0 and abs(diff - amt) < 0.01:
-                all_rows[i]['CREDIT'] = amt
-                all_rows[i]['DEBIT'] = 0.0
-            elif diff < 0 and abs(abs(diff) - amt) < 0.01:
-                all_rows[i]['DEBIT'] = amt
-                all_rows[i]['CREDIT'] = 0.0
+            if i > 0:
+                prev_bal = all_rows[i-1]['Balance']
+                diff = round(curr_bal - prev_bal, 2)
+                
+                if diff > 0:
+                    all_rows[i]['CREDIT'] = amt
+                    all_rows[i]['DEBIT'] = 0.0
+                elif diff < 0:
+                    all_rows[i]['DEBIT'] = amt
+                    all_rows[i]['CREDIT'] = 0.0
+                else:
+                    # If diff == 0 or previous row missing, fallback to heuristics
+                    u_det = all_rows[i]['DETAILS'].upper()
+                    if '/CR/' in u_det or ' CR ' in u_det or 'DEPOSIT' in u_det:
+                        all_rows[i]['CREDIT'] = amt
+                        all_rows[i]['DEBIT'] = 0.0
+                    elif '/DR/' in u_det or ' DR ' in u_det or 'WITHDRAWAL' in u_det:
+                        all_rows[i]['DEBIT'] = amt
+                        all_rows[i]['CREDIT'] = 0.0
+            else:
+                # For Row 0, use heuristics
+                u_det = all_rows[i]['DETAILS'].upper()
+                if '/CR/' in u_det or ' CR ' in u_det or 'DEPOSIT' in u_det:
+                    all_rows[i]['CREDIT'] = amt
+                    all_rows[i]['DEBIT'] = 0.0
+                elif '/DR/' in u_det or ' DR ' in u_det or 'WITHDRAWAL' in u_det:
+                    all_rows[i]['DEBIT'] = amt
+                    all_rows[i]['CREDIT'] = 0.0
                 
         if is_reverse:
             all_rows.reverse()
