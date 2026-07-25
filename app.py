@@ -75,9 +75,33 @@ def parse_pdf(pdf_file, password=''):
             for table in tables:
                 if not table: continue
                 
+                in_summary_block = False
                 # Process dynamically without relying on headers
                 for row in table:
                     cleaned_row = [str(cell).replace('\n', ' ').strip() if cell else '' for cell in row]
+                    row_text = ' '.join(cleaned_row).upper()
+                    
+                    # Skip summary tables/blocks
+                    if 'TOTAL DEBIT' in row_text and 'TOTAL CREDIT' in row_text:
+                        in_summary_block = True
+                        continue
+                        
+                    if in_summary_block:
+                        has_text = any(re.search(r'[A-Za-z]', c) for c in cleaned_row)
+                        if not has_text:
+                            continue
+                        else:
+                            in_summary_block = False
+                            
+                    # Skip informational balance rows without a date
+                    if any(k in row_text for k in ['OPENING BALANCE', 'CLOSING BALANCE', 'BROUGHT FORWARD', 'B/F', 'CARRIED FORWARD', 'C/F']):
+                        date_found = False
+                        for c in cleaned_row:
+                            if re.search(r'\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4}', c):
+                                date_found = True
+                                break
+                        if not date_found:
+                            continue
                     
                     # 1. Find Date
                     date_idx = -1
