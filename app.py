@@ -4,6 +4,7 @@ import pdfplumber
 import io
 import re
 from dateutil import parser as date_parser
+from pdfminer.pdfdocument import PDFPasswordIncorrect
 
 def extract_remarks(details):
     s = str(details).strip()
@@ -55,19 +56,21 @@ def clean_number(val_str):
     s = str(val_str).replace(',', '').strip()
     if not s or s == '-':
         return 0.0
+    is_dr = 'DR' in s.upper()
     match = re.search(r'\d+(?:\.\d+)?', s)
     if match:
         try:
-            return float(match.group(0))
+            val = float(match.group(0))
+            return -val if is_dr else val
         except ValueError:
             return 0.0
     return 0.0
 
-def parse_pdf(pdf_file):
+def parse_pdf(pdf_file, password=''):
     all_rows = []
     
     # Strategy 1: Table Extraction (For Grid-based PDFs like SBI, Kotak, HDFC)
-    with pdfplumber.open(pdf_file) as pdf:
+    with pdfplumber.open(pdf_file, password=password) as pdf:
         for page in pdf.pages:
             tables = page.extract_tables() or []
             for table in tables:
@@ -105,20 +108,33 @@ def parse_pdf(pdf_file):
                                 date_idx = i
                                 break
                                 
-                        if date_idx != -1 and len(cleaned_row) >= 5:
-                            col_map['date'] = date_idx
-                            col_map['balance'] = len(cleaned_row) - 1
-                            col_map['credit'] = len(cleaned_row) - 2
-                            col_map['debit'] = len(cleaned_row) - 3
-                            
-                            max_len = -1
-                            det_idx = -1
-                            for i in range(date_idx + 1, col_map['debit']):
-                                if len(cleaned_row[i]) > max_len:
-                                    max_len = len(cleaned_row[i])
-                                    det_idx = i
-                            col_map['details'] = det_idx if det_idx != -1 else date_idx + 1
-                            inferred_col_map = True
+                        if date_idx != -1:
+                            amt_cols = []
+                            for i in range(date_idx + 1, len(cleaned_row)):
+                                cell_clean = cleaned_row[i].replace(' ', '').replace(',', '')
+                                if re.match(r'^-?\d+\.\d{2}(?:[CcDd][Rr])?$', cell_clean):
+                                    amt_cols.append(i)
+                                    
+                            if len(amt_cols) >= 2:
+                                col_map['date'] = date_idx
+                                col_map['balance'] = amt_cols[-1]
+                                if len(amt_cols) >= 3:
+                                    col_map['credit'] = amt_cols[-2]
+                                    col_map['debit'] = amt_cols[-3]
+                                else:
+                                    col_map['debit'] = amt_cols[-2]
+                                    col_map['credit'] = -1
+                                    
+                                max_len = -1
+                                det_idx = -1
+                                for i in range(date_idx + 1, amt_cols[-2]):
+                                    if len(cleaned_row[i]) > max_len:
+                                        max_len = len(cleaned_row[i])
+                                        det_idx = i
+                                col_map['details'] = det_idx if det_idx != -1 else date_idx + 1
+                                inferred_col_map = True
+                            else:
+                                continue
                         else:
                             continue
                             
@@ -156,7 +172,7 @@ def parse_pdf(pdf_file):
 
     # Strategy 2: Text Line Extraction Fallback (For borderless/multi-line PDFs like BoB Bank of Baroda)
     if not all_rows:
-        with pdfplumber.open(pdf_file) as pdf:
+        with pdfplumber.open(pdf_file, password=password) as pdf:
             for page in pdf.pages:
                 text = page.extract_text() or ''
                 lines = text.split('\n')
@@ -199,6 +215,42 @@ def parse_pdf(pdf_file):
                                 'Remarks': extract_remarks(details)
                             })
 
+    # Balance-based Credit/Debit Post-Processing Correction
+    if len(all_rows) > 0:
+        is_reverse = False
+        for i in range(1, min(10, len(all_rows))):
+            if all_rows[i-1]['Date'] > all_rows[i]['Date']:
+                is_reverse = True
+                break
+            elif all_rows[i-1]['Date'] < all_rows[i]['Date']:
+                is_reverse = False
+                break
+                
+        if is_reverse:
+            all_rows.reverse()
+            
+        for i in range(1, len(all_rows)):
+            prev_bal = all_rows[i-1]['Balance']
+            curr_bal = all_rows[i]['Balance']
+            amt = all_rows[i]['DEBIT'] + all_rows[i]['CREDIT']
+            
+            diff = round(curr_bal - prev_bal, 2)
+            if diff > 0 and abs(diff - amt) < 0.01:
+                all_rows[i]['CREDIT'] = amt
+                all_rows[i]['DEBIT'] = 0.0
+            elif diff < 0 and abs(abs(diff) - amt) < 0.01:
+                all_rows[i]['DEBIT'] = amt
+                all_rows[i]['CREDIT'] = 0.0
+                
+        if is_reverse:
+            all_rows.reverse()
+            
+    # Re-apply absolute value to balances in case they went negative due to overdraft (Dr) logic
+    for row in all_rows:
+        row['Balance'] = abs(row['Balance'])
+        row['DEBIT'] = abs(row['DEBIT'])
+        row['CREDIT'] = abs(row['CREDIT'])
+
     return pd.DataFrame(all_rows)
 
 st.set_page_config(page_title='Bank Statement to Excel', layout='centered')
@@ -208,35 +260,56 @@ st.write('Upload your Bank Statement (SBI, BoB, Kotak, etc.) to extract transact
 uploaded_file = st.file_uploader('Upload PDF Statement', type='pdf')
 
 if uploaded_file is not None:
-    with st.spinner('Extracting data from PDF...'):
-        try:
-            df = parse_pdf(uploaded_file)
-            
-            if df.empty:
-                st.error('No transactions found. Please ensure it is a valid bank statement PDF.')
-            else:
-                st.success(f'Successfully extracted {len(df)} transactions!')
+    needs_password = False
+    is_authenticated = False
+    pdf_password = ''
+    
+    try:
+        with pdfplumber.open(uploaded_file) as pdf:
+            is_authenticated = True
+    except PDFPasswordIncorrect:
+        needs_password = True
+        
+    if needs_password:
+        st.warning("🔒 This PDF is password protected.")
+        pdf_password = st.text_input("Enter PDF Password:", type="password")
+        if pdf_password:
+            try:
+                with pdfplumber.open(uploaded_file, password=pdf_password) as pdf:
+                    is_authenticated = True
+            except PDFPasswordIncorrect:
+                st.error("Incorrect password. Please try again.")
                 
-                st.subheader('Preview of Transactions')
-                st.dataframe(df.head())
+    if is_authenticated:
+        with st.spinner('Extracting data from PDF...'):
+            try:
+                df = parse_pdf(uploaded_file, password=pdf_password)
                 
-                # Create Summary Pivot Table
-                summary_df = df.groupby('Remarks')[['CREDIT', 'DEBIT']].sum().reset_index()
-                summary_df.columns = ['Row Labels', 'Sum of CREDIT', 'Sum of DEBIT']
-                
-                # Excel Generation
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    summary_df.to_excel(writer, sheet_name='Summary', index=False)
-                    transactions_df = df[(df['CREDIT'] > 0) | (df['DEBIT'] > 0)]
-                    transactions_df.to_excel(writer, sheet_name='Transactions', index=False)
-                output.seek(0)
-                
-                st.download_button(
-                    label='📥 Download Excel File',
-                    data=output,
-                    file_name='bank_statement_extracted.xlsx',
-                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                )
-        except Exception as e:
-            st.error(f'An error occurred: {e}')
+                if df.empty:
+                    st.error('No transactions found. Please ensure it is a valid bank statement PDF.')
+                else:
+                    st.success(f'Successfully extracted {len(df)} transactions!')
+                    
+                    st.subheader('Preview of Transactions')
+                    st.dataframe(df.head())
+                    
+                    # Create Summary Pivot Table
+                    summary_df = df.groupby('Remarks')[['CREDIT', 'DEBIT']].sum().reset_index()
+                    summary_df.columns = ['Row Labels', 'Sum of CREDIT', 'Sum of DEBIT']
+                    
+                    # Excel Generation
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        summary_df.to_excel(writer, sheet_name='Summary', index=False)
+                        transactions_df = df[(df['CREDIT'] > 0) | (df['DEBIT'] > 0)]
+                        transactions_df.to_excel(writer, sheet_name='Transactions', index=False)
+                    output.seek(0)
+                    
+                    st.download_button(
+                        label='📥 Download Excel File',
+                        data=output,
+                        file_name='bank_statement_extracted.xlsx',
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
+            except Exception as e:
+                st.error(f'An error occurred: {e}')
