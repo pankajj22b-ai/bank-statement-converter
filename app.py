@@ -41,10 +41,12 @@ def extract_remarks(details):
     if 'PMSBY RENEWAL' in u: return 'PMSBY RENEWAL'
     if 'SBINT' in u: return 'SBINT'
 
-    # 4. Fallback for NEFT / IMPS / RTGS
+    # 4. Fallback for NEFT / IMPS / RTGS / IFT
     if 'NEFT' in u: return 'NEFT'
     if 'IMPS' in u: return 'IMPS'
     if 'RTGS' in u: return 'RTGS'
+    if 'IFT/' in u: return 'IFT'
+    if 'TCFSL' in u: return 'TCFSL'
     if 'WDL TFR' in u or 'WITHDRAWAL' in u: return 'Withdrawals'
 
     return 'Other'
