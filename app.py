@@ -52,14 +52,16 @@ def extract_remarks(details):
 def clean_number(val_str):
     if not val_str:
         return 0.0
-    s = str(val_str).replace(',', '').strip().upper()
-    if s == '-' or s == '':
+    s = str(val_str).replace(',', '').strip()
+    if not s or s == '-':
         return 0.0
-    s = s.replace('CR', '').replace('DR', '').replace('PR', '').replace(' INR', '').replace('₹', '')
-    try:
-        return float(s)
-    except ValueError:
-        return 0.0
+    match = re.search(r'\d+(?:\.\d+)?', s)
+    if match:
+        try:
+            return float(match.group(0))
+        except ValueError:
+            return 0.0
+    return 0.0
 
 def parse_pdf(pdf_file):
     all_rows = []
@@ -182,7 +184,7 @@ if uploaded_file is not None:
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     summary_df.to_excel(writer, sheet_name='Summary', index=False)
-                    transactions_df = df[df['CREDIT'] > 0]
+                    transactions_df = df[(df['CREDIT'] > 0) | (df['DEBIT'] > 0)]
                     transactions_df.to_excel(writer, sheet_name='Transactions', index=False)
                 output.seek(0)
                 
