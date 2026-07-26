@@ -344,7 +344,7 @@ def parse_pdf(pdf_file, password=''):
 
 st.set_page_config(page_title='Bank Statement to Excel', layout='centered')
 st.title('Bank Statement to Excel Converter')
-st.write('Upload your Bank Statement (SBI, BoB, Kotak, etc.) bhavnaaaa maam, to extract transactions and generate an Excel report.')
+st.write('Upload your Bank Statement (SBI, BoB, Kotak, etc.), to extract transactions and generate an Excel report.')
 
 uploaded_file = st.file_uploader('Upload PDF Statement', type='pdf')
 
