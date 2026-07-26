@@ -232,13 +232,16 @@ def parse_pdf(pdf_file, password=''):
     if not all_rows:
         try:
             import pytesseract
-            from pdf2image import convert_from_bytes
+            from pdf2image import convert_from_path, convert_from_bytes
             
-            pdf_file.seek(0)
-            images = convert_from_bytes(pdf_file.read())
+            if isinstance(pdf_file, str):
+                images = convert_from_path(pdf_file)
+            else:
+                pdf_file.seek(0)
+                images = convert_from_bytes(pdf_file.read())
             
             for img in images:
-                text = pytesseract.image_to_string(img)
+                text = pytesseract.image_to_string(img, config='--psm 6')
                 lines = text.split('\n')
                 for line in lines:
                     m_date = re.match(r'^\s*(\d{1,2}[-/ \.]+[A-Za-z0-9]{2,}[-/ \.]+\d{2,4})', line)
