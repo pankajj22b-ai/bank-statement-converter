@@ -52,7 +52,7 @@ def extract_remarks(details):
 
     return 'Other'
 
-def clean_number(val_str):
+def clean_number(val_str, is_balance=False):
     if not val_str:
         return 0.0
     s = str(val_str).replace(',', '').strip()
@@ -63,7 +63,7 @@ def clean_number(val_str):
     if match:
         try:
             val = float(match.group(0))
-            return -val if is_dr else val
+            return -val if (is_dr and is_balance) else val
         except ValueError:
             return 0.0
     return 0.0
@@ -118,7 +118,7 @@ def parse_pdf(pdf_file, password=''):
                     for i in range(len(cleaned_row)):
                         if i == date_idx: continue
                         cell_clean = cleaned_row[i].replace(' ', '').replace(',', '')
-                        if re.match(r'^-?\d+\.\d{2}(?:[CcDd][Rr])?$', cell_clean):
+                        if re.match(r'^-?\d+\.\d{2}(?:\(?[CcDd][Rr]\)?)?$', cell_clean):
                             amt_cols.append(i)
                             
                     if date_idx != -1:
@@ -142,13 +142,13 @@ def parse_pdf(pdf_file, password=''):
                         balance = 0.0
                         amt = 0.0
                         if len(amt_cols) >= 3:
-                            balance = clean_number(cleaned_row[amt_cols[-1]])
-                            amt = max(clean_number(cleaned_row[amt_cols[-2]]), clean_number(cleaned_row[amt_cols[-3]]))
+                            balance = clean_number(cleaned_row[amt_cols[-1]], is_balance=True)
+                            amt = max(clean_number(cleaned_row[amt_cols[-2]], is_balance=False), clean_number(cleaned_row[amt_cols[-3]], is_balance=False))
                         elif len(amt_cols) == 2:
-                            balance = clean_number(cleaned_row[amt_cols[-1]])
-                            amt = clean_number(cleaned_row[amt_cols[-2]])
+                            balance = clean_number(cleaned_row[amt_cols[-1]], is_balance=True)
+                            amt = clean_number(cleaned_row[amt_cols[-2]], is_balance=False)
                         elif len(amt_cols) == 1:
-                            amt = clean_number(cleaned_row[amt_cols[0]])
+                            amt = clean_number(cleaned_row[amt_cols[0]], is_balance=False)
                             
                         all_rows.append({
                             'Date': parsed_date.strftime('%Y-%m-%d'),
@@ -170,17 +170,17 @@ def parse_pdf(pdf_file, password=''):
                             all_rows[-1]['Remarks'] = extract_remarks(all_rows[-1]['DETAILS'])
                             
                         if len(amt_cols) >= 3:
-                            balance = clean_number(cleaned_row[amt_cols[-1]])
-                            amt = max(clean_number(cleaned_row[amt_cols[-2]]), clean_number(cleaned_row[amt_cols[-3]]))
+                            balance = clean_number(cleaned_row[amt_cols[-1]], is_balance=True)
+                            amt = max(clean_number(cleaned_row[amt_cols[-2]], is_balance=False), clean_number(cleaned_row[amt_cols[-3]], is_balance=False))
                             if amt > 0: all_rows[-1]['DEBIT'] = amt
                             if balance > 0: all_rows[-1]['Balance'] = balance
                         elif len(amt_cols) == 2:
-                            balance = clean_number(cleaned_row[amt_cols[-1]])
-                            amt = clean_number(cleaned_row[amt_cols[-2]])
+                            balance = clean_number(cleaned_row[amt_cols[-1]], is_balance=True)
+                            amt = clean_number(cleaned_row[amt_cols[-2]], is_balance=False)
                             if amt > 0: all_rows[-1]['DEBIT'] = amt
                             if balance > 0: all_rows[-1]['Balance'] = balance
                         elif len(amt_cols) == 1:
-                            amt = clean_number(cleaned_row[amt_cols[0]])
+                            amt = clean_number(cleaned_row[amt_cols[0]], is_balance=False)
                             if amt > 0: all_rows[-1]['DEBIT'] = amt
 
     # Strategy 2: Text Line Extraction Fallback (For borderless/multi-line PDFs like BoB Bank of Baroda)
@@ -203,10 +203,10 @@ def parse_pdf(pdf_file, password=''):
                         if m_val:
                             rest = rest[len(m_val.group(0)):].strip()
                             
-                        amounts = re.findall(r'[\d,]+\.\d{2}(?:[CcDd][Rr])?', rest)
+                        amounts = re.findall(r'[\d,]+\.\d{2}(?:\(?[CcDd][Rr]\)?)?', rest)
                         if len(amounts) >= 2:
-                            bal_val = clean_number(amounts[-1])
-                            amt_val = clean_number(amounts[-2])
+                            bal_val = clean_number(amounts[-1], is_balance=True)
+                            amt_val = clean_number(amounts[-2], is_balance=False)
                             
                             amt_pos = rest.rfind(amounts[-2])
                             details = rest[:amt_pos].strip()
@@ -254,10 +254,10 @@ def parse_pdf(pdf_file, password=''):
                         if m_val:
                             rest = rest[len(m_val.group(0)):].strip()
                             
-                        amounts = re.findall(r'[\d,]+\.\d{2}(?:[CcDd][Rr])?', rest)
+                        amounts = re.findall(r'[\d,]+\.\d{2}(?:\(?[CcDd][Rr]\)?)?', rest)
                         if len(amounts) >= 2:
-                            bal_val = clean_number(amounts[-1])
-                            amt_val = clean_number(amounts[-2])
+                            bal_val = clean_number(amounts[-1], is_balance=True)
+                            amt_val = clean_number(amounts[-2], is_balance=False)
                             
                             amt_pos = rest.rfind(amounts[-2])
                             details = rest[:amt_pos].strip()
