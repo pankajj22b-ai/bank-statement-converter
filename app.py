@@ -355,13 +355,13 @@ header {visibility: hidden;}
 footer {visibility: hidden;}
 .stApp [data-testid="stToolbar"] {display: none;}
 .stApp [data-testid="stDecoration"] {display: none;}
-/* Hide the Streamlit Cloud profile badge */
-div[class^="viewerBadge"] {display: none !important;}
-div[class^="styles_viewerBadge"] {display: none !important;}
+/* Hide internal viewer badges if any */
+div[class*="viewerBadge"] {display: none !important;}
+div[class*="styles_viewerBadge"] {display: none !important;}
 </style>
 
-<!-- Add custom unclickable watermark -->
-<div style="position: fixed; bottom: 16px; right: 20px; font-size: 11px; color: gray; z-index: 9999999; font-family: sans-serif; pointer-events: none; user-select: none; opacity: 0.8;">
+<!-- Add custom unclickable watermark (shifted left to avoid admin overlay) -->
+<div style="position: fixed; bottom: 16px; right: 120px; font-size: 11px; color: gray; z-index: 9999999; font-family: sans-serif; pointer-events: none; user-select: none; opacity: 0.8;">
     pankajj22b-ai
 </div>
 """
