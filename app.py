@@ -366,12 +366,33 @@ div[class*="ManageApp"] {display: none !important;}
 a[href*="share.streamlit.io"] {display: none !important;}
 </style>
 
-<!-- Physically cover the bottom right corner to hide anything that CSS missed -->
-<div style="position: fixed; bottom: 0px; right: 0px; width: 120px; height: 60px; background-color: #0e1117; z-index: 2147483647; display: flex; align-items: flex-end; justify-content: flex-end; padding-bottom: 16px; padding-right: 20px; cursor: default;">
-    <span style="font-size: 11px; color: gray; opacity: 0.8; user-select: none; pointer-events: none;">pankajj22b-ai</span>
+<!-- Add custom unclickable watermark -->
+<div style="position: fixed; bottom: 16px; right: 20px; font-size: 11px; color: gray; z-index: 9999999; font-family: sans-serif; pointer-events: none; user-select: none; opacity: 0.8;">
+    pankajj22b-ai
 </div>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# Try cross-origin JavaScript injection to destroy the parent badges
+import streamlit.components.v1 as components
+components.html("""
+<script>
+setInterval(function() {
+    try {
+        var parentDoc = window.parent.document;
+        var divs = parentDoc.querySelectorAll('div');
+        for (var i = 0; i < divs.length; i++) {
+            var el = divs[i];
+            if (el.className && typeof el.className === 'string') {
+                if (el.className.includes('viewerBadge') || el.className.includes('creatorBadge')) {
+                    el.style.display = 'none';
+                }
+            }
+        }
+    } catch(e) {}
+}, 500);
+</script>
+""", height=0, width=0)
 
 st.title('Bank Statement to Excel Converter')
 st.write('Upload your Bank Statement (SBI, BoB, Kotak, etc.), to extract transactions and generate an Excel report.')
