@@ -346,6 +346,19 @@ def parse_pdf(pdf_file, password=''):
     return pd.DataFrame(all_rows)
 
 st.set_page_config(page_title='Bank Statement to Excel', layout='centered')
+
+# Hide Streamlit toolbar, hamburger menu, GitHub link, Fork button, and footer
+hide_streamlit_style = """
+<style>
+#MainMenu {visibility: hidden;}
+header {visibility: hidden;}
+footer {visibility: hidden;}
+.stApp [data-testid="stToolbar"] {display: none;}
+.stApp [data-testid="stDecoration"] {display: none;}
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 st.title('Bank Statement to Excel Converter')
 st.write('Upload your Bank Statement (SBI, BoB, Kotak, etc.), to extract transactions and generate an Excel report.')
 
