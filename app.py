@@ -355,14 +355,20 @@ header {visibility: hidden;}
 footer {visibility: hidden;}
 .stApp [data-testid="stToolbar"] {display: none;}
 .stApp [data-testid="stDecoration"] {display: none;}
-/* Hide internal viewer badges if any */
+
+/* Aggressively hide ALL Streamlit Cloud badges */
 div[class*="viewerBadge"] {display: none !important;}
 div[class*="styles_viewerBadge"] {display: none !important;}
+div[class*="creatorBadge"] {display: none !important;}
+div[class*="styles_creatorBadge"] {display: none !important;}
+div[class*="manageAppBadge"] {display: none !important;}
+div[class*="ManageApp"] {display: none !important;}
+a[href*="share.streamlit.io"] {display: none !important;}
 </style>
 
-<!-- Add custom unclickable watermark (shifted left to avoid admin overlay) -->
-<div style="position: fixed; bottom: 16px; right: 120px; font-size: 11px; color: gray; z-index: 9999999; font-family: sans-serif; pointer-events: none; user-select: none; opacity: 0.8;">
-    pankajj22b-ai
+<!-- Physically cover the bottom right corner to hide anything that CSS missed -->
+<div style="position: fixed; bottom: 0px; right: 0px; width: 120px; height: 60px; background-color: #0e1117; z-index: 2147483647; display: flex; align-items: flex-end; justify-content: flex-end; padding-bottom: 16px; padding-right: 20px; cursor: default;">
+    <span style="font-size: 11px; color: gray; opacity: 0.8; user-select: none; pointer-events: none;">pankajj22b-ai</span>
 </div>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
